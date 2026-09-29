@@ -1,0 +1,81 @@
+import requests
+from bs4 import BeautifulSoup
+import time
+import json
+
+# Lista de productos gaming a vigilar con sus selectores y nombres
+PRODUCTOS = [
+    {
+        "id": "metroid_ravenous_special",
+        "nombre": "Metroid Ravenous - Edición Especial",
+        "tienda": "My Nintendo Store",
+        "url": "https://store.nintendo.com/es-es/metroid-ravenous-edicin-especial-P00210",
+        "selector": "button[data-testid='add-to-cart-button']",
+        "texto_agotado": "Agotado"
+    },
+    {
+        "id": "ps5_pro_bundle",
+        "nombre": "PlayStation 5 Pro",
+        "tienda": "GAME España",
+        "url": "https://www.game.es/hardware/consola/playstation-5/ps5-pro",
+        "selector": ".buy-button",
+        "texto_agotado": "Próximamente"
+    }
+]
+
+# Configuración de notificaciones Push (vía Firebase o Telegram API)
+TELEGRAM_BOT_TOKEN = "TU_BOT_TOKEN_AQUI"
+TELEGRAM_CHAT_ID = "TU_CHAT_ID_AQUI"
+
+def enviar_notificacion(producto):
+    mensaje = (
+        f"🚨 ¡STOCK DETECTADO!\n\n"
+        f"🎮 Producto: {producto['nombre']}\n"
+        f"🏪 Tienda: {producto['tienda']}\n\n"
+        f"⚡ Reserva directamete aquí:\n{producto['url']}"
+    )
+    url_api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": mensaje,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url_api, data=payload, timeout=10)
+        print(f"[ÉXITO] Alerta enviada para {producto['nombre']}")
+    except Exception as e:
+        print(f"[ERROR] No se pudo enviar la alerta: {e}")
+
+def comprobar_stock():
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "es-ES,es;q=0.9"
+    }
+    
+    for prod in PRODUCTOS:
+        try:
+            respuesta = requests.get(prod["url"], headers=headers, timeout=10)
+            if respuesta.status_code == 200:
+                soup = BeautifulSoup(respuesta.text, 'html.parser')
+                boton = soup.select_one(prod["selector"])
+                
+                if boton:
+                    texto_boton = boton.get_text(strip=True)
+                    # Si el botón ya no contiene el texto de 'Agotado' o 'Próximamente', ¡HAY STOCK!
+                    if prod["texto_agotado"].lower() not in texto_boton.lower():
+                        print(f"🔥 ¡Stock disponible en {prod['tienda']}!")
+                        enviar_notificacion(prod)
+                    else:
+                        print(f"[-] {prod['nombre']} sigue sin stock en {prod['tienda']}.")
+            else:
+                print(f"[!] Error al acceder a {prod['tienda']} (Código: {respuesta.status_code})")
+        except Exception as err:
+            print(f"[x] Error en la petición para {prod['nombre']}: {err}")
+
+# Bucle infinito de revisión continua
+if __name__ == "__main__":
+    print("🚀 Servidor Monitor Re-Stock Gaming iniciado...")
+    while True:
+        comprobar_stock()
+        # Espera 5 segundos entre revisiones para no ser bloqueado por las webs
+        time.sleep(5)
